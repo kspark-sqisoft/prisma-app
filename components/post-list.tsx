@@ -35,92 +35,49 @@ export default function PostList({ tagSearchQuery = "", onUserSearchStart }: Pos
   const [userSearchQuery, setUserSearchQuery] = useState("");
   // 디바운싱된 사용자 검색어
   const [debouncedUserSearchQuery, setDebouncedUserSearchQuery] = useState("");
-  // 태그 클릭으로 인한 검색어 초기화인지 추적
+
+  // ============================================================================
+  // 태그와 검색어 상호작용 로직
+  // ============================================================================
+
+  // 태그 클릭으로 인한 검색어 초기화인지 구분하기 위한 플래그
   const isTagClickRef = useRef(false);
 
-  // 사용자가 직접 검색어를 입력하면 태그 선택 해제
-  // 태그 클릭으로 인한 검색어 초기화는 제외
-  const prevUserSearchQueryRef = useRef(userSearchQuery);
-
-  useEffect(() => {
-    // 이전 검색어와 비교하여 사용자가 직접 입력한 경우만 태그 선택 해제
-    const prevQuery = prevUserSearchQueryRef.current;
-    const isUserTyping = userSearchQuery &&
-      userSearchQuery.trim() !== "" &&
-      userSearchQuery !== prevQuery && // 검색어가 변경되었고
-      prevQuery !== "" && // 이전 검색어가 비어있지 않았거나 (계속 입력 중)
-      !isTagClickRef.current && // 태그 클릭이 아니고
-      tagSearchQuery && // 태그가 선택되어 있고
-      onUserSearchStart;
-
-    if (isUserTyping) {
-      onUserSearchStart();
-    }
-
-    // 이전 검색어 업데이트
-    prevUserSearchQueryRef.current = userSearchQuery;
-  }, [userSearchQuery, tagSearchQuery, onUserSearchStart]);
-
-  // 태그 선택 시 검색어 초기화를 위한 이벤트 리스너
-  useEffect(() => {
-    const handleTagSelected = () => {
-      setUserSearchQuery("");
-      setDebouncedUserSearchQuery("");
-    };
-
-    window.addEventListener("tagSelected", handleTagSelected);
-
-    return () => {
-      window.removeEventListener("tagSelected", handleTagSelected);
-    };
-  }, []);
-
-  // 태그가 선택되면 사용자 검색어 즉시 초기화 (태그 선택 시 무조건 검색어 지우기)
+  // 태그가 선택되면 검색어 초기화
   useEffect(() => {
     if (tagSearchQuery) {
-      // 태그 클릭으로 인한 초기화임을 표시 (다른 useEffect에서 태그 해제를 방지)
+      // 태그 클릭으로 인한 초기화임을 표시
       isTagClickRef.current = true;
-      // 이전 검색어도 초기화하여 사용자 입력으로 인식되지 않도록
-      prevUserSearchQueryRef.current = "";
-      // 태그가 선택되면 검색 필드를 즉시 초기화 (디바운싱 없이)
-      // 이벤트를 발생시켜 다른 컴포넌트에도 알림
-      window.dispatchEvent(new CustomEvent("tagSelected"));
-      // 검색어 즉시 초기화 (태그 선택 시 즉시 반영되도록)
       const timer = setTimeout(() => {
         setUserSearchQuery("");
-        setDebouncedUserSearchQuery(""); // 즉시 초기화하여 태그만으로 필터링
-        // 태그 선택 시 React Query를 강제로 refetch하여 즉시 데이터 로드
-        // queryKey가 변경되면 자동으로 refetch되지만, 명시적으로 invalidate하여 즉시 반영
+        setDebouncedUserSearchQuery("");
+        // 태그 선택 시 즉시 데이터 로드
         queryClient.invalidateQueries({
           queryKey: ["posts"],
           refetchType: "active"
         });
-        // 플래그를 다음 렌더 사이클에서 리셋 (다른 useEffect가 실행된 후)
+        // 플래그 리셋 (다음 렌더 사이클에서)
         setTimeout(() => {
           isTagClickRef.current = false;
-        }, 200);
+        }, 100);
       }, 0);
       return () => clearTimeout(timer);
-    } else {
-      // 태그가 해제되면 플래그 리셋
-      isTagClickRef.current = false;
     }
   }, [tagSearchQuery, queryClient]);
 
   // 사용자 검색어 디바운싱 (500ms 지연)
-  // 태그가 선택되어 있으면 디바운싱하지 않음
+  // 검색어가 입력되면 항상 디바운싱 적용 (태그 선택 중에도)
   useEffect(() => {
-    // 태그가 선택되어 있으면 디바운싱하지 않음
-    if (tagSearchQuery) {
-      return;
-    }
-
     const timer = setTimeout(() => {
       setDebouncedUserSearchQuery(userSearchQuery);
+      // 디바운싱 완료 후 태그 선택 해제 (전체 포스트가 잠깐 보이는 것을 방지)
+      if (!isTagClickRef.current && userSearchQuery.trim() !== "" && tagSearchQuery && onUserSearchStart) {
+        onUserSearchStart();
+      }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [userSearchQuery, tagSearchQuery]);
+  }, [userSearchQuery, tagSearchQuery, onUserSearchStart]);
 
   // React Query Infinite Query로 포스트 데이터 가져오기
   // 검색어가 있으면 서버 측 검색, 없으면 일반 로드
@@ -258,7 +215,8 @@ export default function PostList({ tagSearchQuery = "", onUserSearchStart }: Pos
               🔍
             </span>
           </div>
-          {(userSearchQuery || tagSearchQuery) && (
+          {/* 검색어가 입력되어 있을 때만 Clear 버튼 표시 (태그 선택 시에는 검색어가 지워지므로 버튼도 사라짐) */}
+          {userSearchQuery && (
             <Button
               variant="outline"
               onClick={() => {

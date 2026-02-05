@@ -11,6 +11,7 @@ export const userSchema = z.object({
 export const postSchema = z.object({
   title: z.string().min(1), // 제목은 최소 1글자 이상
   userId: z.number(), // 작성자 ID는 숫자
+  tags: z.array(z.string().min(1)).optional(), // 태그 배열 (선택적)
 });
 
 // 댓글 스키마

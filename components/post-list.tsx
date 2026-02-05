@@ -1,8 +1,9 @@
 "use client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getPosts, deletePost, deleteComment } from "../actions/actions";
+import { getPosts, deletePost, deleteComment, updateComment } from "../actions/actions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import Link from "next/link";
 import CommentForm from "./comment-from";
@@ -24,8 +25,20 @@ export default function PostList() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }), // 삭제 후 리스트 갱신
   });
 
+  // 댓글 수정 mutation
+  const updateCommentMutation = useMutation({
+    mutationFn: ({ id, content }: { id: number; content: string }) => updateComment(id, content),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] }); // 수정 후 리스트 갱신
+      setEditingCommentId(null); // 수정 모드 종료
+    },
+  });
+
   // 댓글 펼침/접힘 상태 관리
   const [expandedPosts, setExpandedPosts] = useState<number[]>([]);
+  // 댓글 수정 상태 관리
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState("");
   const toggleComments = (id: number) => {
     setExpandedPosts((prev) =>
       prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id],
@@ -62,6 +75,18 @@ export default function PostList() {
                 <span>•</span>
                 <span>{post.comments.length} 💬</span>
               </div>
+              {post.tags && post.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {post.tags.map((postTag) => (
+                    <span
+                      key={postTag.tag.id}
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"
+                    >
+                      #{postTag.tag.name}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             {/* 버튼 클릭 시 카드 클릭 이벤트 전파 방지 */}
             <div className="flex gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
@@ -107,22 +132,83 @@ export default function PostList() {
                         key={c.id}
                         className="flex justify-between items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                       >
-                        <span className="flex-1 text-gray-700">{c.content}</span>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
-                          disabled={deleteCommentMutation.isPending}
-                          onClick={(e) => {
-                            e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
-                            deleteCommentMutation.mutate(c.id);
-                          }}
-                        >
-                          {/* 현재 삭제 중인 댓글만 "⏳" 표시 */}
-                          {deleteCommentMutation.isPending && deleteCommentMutation.variables === c.id
-                            ? "⏳"
-                            : "🗑️"}
-                        </Button>
+                        {editingCommentId === c.id ? (
+                          // 수정 모드
+                          <div className="flex-1 flex gap-2">
+                            <Input
+                              value={editingContent}
+                              onChange={(e) => setEditingContent(e.target.value)}
+                              className="flex-1"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  updateCommentMutation.mutate({ id: c.id, content: editingContent });
+                                } else if (e.key === "Escape") {
+                                  setEditingCommentId(null);
+                                  setEditingContent("");
+                                }
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateCommentMutation.mutate({ id: c.id, content: editingContent });
+                              }}
+                              disabled={updateCommentMutation.isPending}
+                              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+                            >
+                              {updateCommentMutation.isPending ? "⏳" : "✓"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCommentId(null);
+                                setEditingContent("");
+                              }}
+                              className="border-gray-300"
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          // 일반 모드
+                          <>
+                            <span className="flex-1 text-gray-700">{c.content}</span>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingCommentId(c.id);
+                                  setEditingContent(c.content);
+                                }}
+                              >
+                                ✏️
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
+                                disabled={deleteCommentMutation.isPending}
+                                onClick={(e) => {
+                                  e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
+                                  deleteCommentMutation.mutate(c.id);
+                                }}
+                              >
+                                {/* 현재 삭제 중인 댓글만 "⏳" 표시 */}
+                                {deleteCommentMutation.isPending && deleteCommentMutation.variables === c.id
+                                  ? "⏳"
+                                  : "🗑️"}
+                              </Button>
+                            </div>
+                          </>
+                        )}
                       </li>
                     ))}
                   </ul>

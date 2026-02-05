@@ -7,10 +7,14 @@ import {  postSchema, commentSchema } from "../lib/validation";
 // Posts 관련 Server Actions
 // ============================================================================
 
-// 모든 포스트 조회 (사용자, 댓글 포함)
+// 모든 포스트 조회 (사용자, 댓글, 태그 포함)
 export const getPosts = async () =>{
   const posts =await prisma.post.findMany({
-    include: { user: true, comments: true }, // 관련 데이터 포함
+    include: { 
+      user: true, 
+      comments: true, 
+      tags: { include: { tag: true } } // PostTag를 통해 Tag 포함
+    },
     orderBy: { id: "desc" }, // 최신순 정렬
   });
   //console.log(JSON.stringify(posts, null, 2));
@@ -101,28 +105,94 @@ export const getPosts = async () => {
 export const getPost = async (id: number) =>{
   const post = await prisma.post.findUnique({
     where: { id },
-    include: { user: true, comments: true },
+    include: { 
+      user: true, 
+      comments: true, 
+      tags: { include: { tag: true } } // PostTag를 통해 Tag 포함
+    },
   });
   return post;
 }
 
 // 포스트 생성 (Zod 스키마로 검증)
 export const createPost = async (formData: FormData) => {
+  const tagNames = formData.get("tags")?.toString().split(",").map(t => t.trim()).filter(t => t.length > 0) || [];
+  
   const parsed = postSchema.parse({
     title: formData.get("title"),
     userId: Number(formData.get("userId")),
+    tags: tagNames.length > 0 ? tagNames : undefined,
   });
-  return await prisma.post.create({ data: parsed });
+
+  // 태그 처리: 존재하지 않는 태그는 생성하고, 존재하는 태그는 연결
+  const tagConnections = await Promise.all(
+    tagNames.map(async (tagName) => {
+      const existingTag = await prisma.tag.findUnique({
+        where: { name: tagName },
+      });
+      
+      if (existingTag) {
+        return { id: existingTag.id };
+      } else {
+        const newTag = await prisma.tag.create({
+          data: { name: tagName },
+        });
+        return { id: newTag.id };
+      }
+    })
+  );
+
+  return await prisma.post.create({
+    data: {
+      title: parsed.title,
+      userId: parsed.userId,
+      tags: {
+        create: tagConnections.map(tag => ({ tagId: tag.id })),
+      },
+    },
+    include: { tags: { include: { tag: true } } },
+  });
 };
 
 // 포스트 수정
-export const updatePost = async (id: number, title: string, userId: number) =>
-  await prisma.post.update({ where: { id }, data: { title, userId } });
+export const updatePost = async (id: number, title: string, userId: number, tagNames: string[] = []) => {
+  // 태그 처리: 존재하지 않는 태그는 생성하고, 존재하는 태그는 연결
+  const tagConnections = await Promise.all(
+    tagNames.map(async (tagName) => {
+      const existingTag = await prisma.tag.findUnique({
+        where: { name: tagName },
+      });
+      
+      if (existingTag) {
+        return { id: existingTag.id };
+      } else {
+        const newTag = await prisma.tag.create({
+          data: { name: tagName },
+        });
+        return { id: newTag.id };
+      }
+    })
+  );
+
+  return await prisma.post.update({
+    where: { id },
+    data: {
+      title,
+      userId,
+      tags: {
+        deleteMany: {}, // 기존 태그 연결 모두 제거
+        create: tagConnections.map(tag => ({ tagId: tag.id })), // 새로운 태그 연결 생성
+      },
+    },
+    include: { tags: { include: { tag: true } } },
+  });
+};
 
 // 포스트 삭제 (외래 키 제약 조건 때문에 댓글 먼저 삭제)
 export const deletePost = async (id: number) => {
   // 먼저 관련된 모든 댓글 삭제
   await prisma.comment.deleteMany({ where: { postId: id } });
+  // 태그 연결은 자동으로 해제됨 (다대다 관계)
   // 그 다음 포스트 삭제
   return await prisma.post.delete({ where: { id } });
 };
@@ -140,6 +210,13 @@ export const createComment = async (formData: FormData) => {
   return await prisma.comment.create({ data: parsed });
 };
 
+// 댓글 수정
+export const updateComment = async (id: number, content: string) =>
+  await prisma.comment.update({ 
+    where: { id }, 
+    data: { content } 
+  });
+
 // 댓글 삭제
 export const deleteComment = async (id: number) =>
   await prisma.comment.delete({ where: { id } });
@@ -153,3 +230,15 @@ export const getUsers = async () => {
   const users = await prisma.user.findMany();
   return users;
 }
+
+// ============================================================================
+// Tags 관련 Server Actions
+// ============================================================================
+
+// 모든 태그 조회
+export const getTags = async () => {
+  const tags = await prisma.tag.findMany({
+    orderBy: { name: "asc" },
+  });
+  return tags;
+};

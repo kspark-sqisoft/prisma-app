@@ -25,6 +25,7 @@ model Post {
   userId   Int
   user     User      @relation(fields: [userId], references: [id])
   comments Comment[]
+  tags     PostTag[] // 🔥 다대다 (explicit)
 }
 
 model Comment {
@@ -32,4 +33,22 @@ model Comment {
   content String
   postId  Int
   post    Post   @relation(fields: [postId], references: [id])
+}
+
+model Tag {
+  id    Int       @id @default(autoincrement())
+  name  String    @unique
+  posts PostTag[] // 🔥 다대다 (explicit)
+}
+
+// Post와 Tag의 중간 테이블 (explicit many-to-many)
+model PostTag {
+  postId Int
+  tagId  Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId]) // 복합 기본 키
+  @@index([postId])
+  @@index([tagId])
 }

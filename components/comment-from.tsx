@@ -1,0 +1,49 @@
+"use client";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createComment } from "../actions/actions";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
+interface CommentFormProps {
+  postId: number;
+}
+
+export default function CommentForm({ postId }: CommentFormProps) {
+  const queryClient = useQueryClient();
+  const [content, setContent] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: (formData: FormData) => createComment(formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+      setContent("");
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData();
+    formData.set("content", content);
+    formData.set("postId", String(postId));
+    mutation.mutate(formData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2 mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+      <Input
+        placeholder="Write a comment..."
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        className="flex-1"
+      />
+      <Button
+        type="submit"
+        disabled={mutation.isPending}
+        className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
+      >
+        {mutation.isPending ? "⏳ Adding..." : "💬 Add Comment"}
+      </Button>
+    </form>
+  );
+}

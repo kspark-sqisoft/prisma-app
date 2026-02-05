@@ -32,7 +32,7 @@ export function LogoLink() {
       onClick={handleClick}
       className="cursor-pointer hover:opacity-80 transition-opacity"
     >
-      <h1 className="text-2xl font-bold from-blue-600 to-purple-600 bg-clip-text text-transparent">
+      <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
         Blog App
       </h1>
     </Link>

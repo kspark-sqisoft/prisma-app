@@ -7,19 +7,24 @@ import { useState } from "react";
 import Link from "next/link";
 import CommentForm from "./comment-from";
 
+// 포스트 리스트 컴포넌트
 export default function PostList() {
   const queryClient = useQueryClient();
+  // React Query로 포스트 데이터 가져오기
   const { data: posts } = useQuery({ queryKey: ["posts"], queryFn: getPosts });
 
+  // 포스트 삭제 mutation
   const deletePostMutation = useMutation({
     mutationFn: deletePost,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }), // 삭제 후 리스트 갱신
   });
+  // 댓글 삭제 mutation
   const deleteCommentMutation = useMutation({
     mutationFn: deleteComment,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }), // 삭제 후 리스트 갱신
   });
 
+  // 댓글 펼침/접힘 상태 관리
   const [expandedPosts, setExpandedPosts] = useState<number[]>([]);
   const toggleComments = (id: number) => {
     setExpandedPosts((prev) =>
@@ -58,6 +63,7 @@ export default function PostList() {
                 <span>{post.comments.length} 💬</span>
               </div>
             </div>
+            {/* 버튼 클릭 시 카드 클릭 이벤트 전파 방지 */}
             <div className="flex gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
               <Link href={`/posts/edit/${post.id}`}>
                 <Button
@@ -73,10 +79,11 @@ export default function PostList() {
                 className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
                 disabled={deletePostMutation.isPending}
                 onClick={(e) => {
-                  e.stopPropagation();
+                  e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
                   deletePostMutation.mutate(post.id);
                 }}
               >
+                {/* 현재 삭제 중인 포스트만 "Deleting..." 표시 */}
                 {deletePostMutation.isPending && deletePostMutation.variables === post.id
                   ? "⏳ Deleting..."
                   : "🗑️ Delete"}
@@ -84,6 +91,7 @@ export default function PostList() {
             </div>
           </div>
 
+          {/* 댓글 섹션 (카드 클릭 시 펼쳐짐) */}
           {expandedPosts.includes(post.id) && (
             <div className="mt-6 pt-6 border-t border-gray-200 space-y-4 animate-in fade-in slide-in-from-top-2">
               <div className="space-y-3">
@@ -106,10 +114,11 @@ export default function PostList() {
                           className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
                           disabled={deleteCommentMutation.isPending}
                           onClick={(e) => {
-                            e.stopPropagation();
+                            e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
                             deleteCommentMutation.mutate(c.id);
                           }}
                         >
+                          {/* 현재 삭제 중인 댓글만 "⏳" 표시 */}
                           {deleteCommentMutation.isPending && deleteCommentMutation.variables === c.id
                             ? "⏳"
                             : "🗑️"}
@@ -119,6 +128,7 @@ export default function PostList() {
                   </ul>
                 )}
               </div>
+              {/* 댓글 작성 폼 */}
               <CommentForm postId={post.id} />
             </div>
           )}

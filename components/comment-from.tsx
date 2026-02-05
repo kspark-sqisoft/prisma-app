@@ -9,20 +9,23 @@ interface CommentFormProps {
   postId: number;
 }
 
+// 댓글 작성 폼 컴포넌트
 export default function CommentForm({ postId }: CommentFormProps) {
   const queryClient = useQueryClient();
   const [content, setContent] = useState("");
 
+  // 댓글 생성 mutation
   const mutation = useMutation({
     mutationFn: (formData: FormData) => createComment(formData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] });
-      setContent("");
+      queryClient.invalidateQueries({ queryKey: ["posts"] }); // 댓글 추가 후 리스트 갱신
+      setContent(""); // 입력 필드 초기화
     },
   });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // FormData로 서버 액션에 전달
     const formData = new FormData();
     formData.set("content", content);
     formData.set("postId", String(postId));

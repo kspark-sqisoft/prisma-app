@@ -8,16 +8,19 @@ import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { postSchema } from "@/lib/validation";
 
+// 포스트 생성 페이지
 export default function PostCreate() {
   const queryClient = useQueryClient();
   const router = useRouter();
+  // 사용자 목록 가져오기
   const { data: users } = useQuery({ queryKey: ["users"], queryFn: getUsers });
 
+  // 포스트 생성 mutation
   const mutation = useMutation({
     mutationFn: (formData: FormData) => createPost(formData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] });
-      router.push("/");
+      queryClient.invalidateQueries({ queryKey: ["posts"] }); // 생성 후 리스트 갱신
+      router.push("/"); // 메인 페이지로 이동
     },
   });
 
@@ -26,11 +29,13 @@ export default function PostCreate() {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // Zod 스키마로 클라이언트 측 검증
     const parsed = postSchema.safeParse({ title, userId });
     if (!parsed.success) {
       alert("Validation failed");
       return;
     }
+    // FormData로 서버 액션에 전달
     const formData = new FormData();
     formData.set("title", title);
     formData.set("userId", String(userId));

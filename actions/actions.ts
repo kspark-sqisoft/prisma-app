@@ -1,15 +1,17 @@
-"use server"
+"use server" // Next.js Server Actions 지시어
 
 import prisma from "../lib/prisma";
 import {  postSchema, commentSchema } from "../lib/validation";
 
+// ============================================================================
+// Posts 관련 Server Actions
+// ============================================================================
 
-
-// Posts
+// 모든 포스트 조회 (사용자, 댓글 포함)
 export const getPosts = async () =>{
   const posts =await prisma.post.findMany({
-    include: { user: true, comments: true },
-    orderBy: { id: "desc" },
+    include: { user: true, comments: true }, // 관련 데이터 포함
+    orderBy: { id: "desc" }, // 최신순 정렬
   });
   //console.log(JSON.stringify(posts, null, 2));
   
@@ -95,6 +97,7 @@ export const getPosts = async () => {
 */
 
 
+// 특정 포스트 조회
 export const getPost = async (id: number) =>{
   const post = await prisma.post.findUnique({
     where: { id },
@@ -103,6 +106,7 @@ export const getPost = async (id: number) =>{
   return post;
 }
 
+// 포스트 생성 (Zod 스키마로 검증)
 export const createPost = async (formData: FormData) => {
   const parsed = postSchema.parse({
     title: formData.get("title"),
@@ -111,9 +115,11 @@ export const createPost = async (formData: FormData) => {
   return await prisma.post.create({ data: parsed });
 };
 
+// 포스트 수정
 export const updatePost = async (id: number, title: string, userId: number) =>
   await prisma.post.update({ where: { id }, data: { title, userId } });
 
+// 포스트 삭제 (외래 키 제약 조건 때문에 댓글 먼저 삭제)
 export const deletePost = async (id: number) => {
   // 먼저 관련된 모든 댓글 삭제
   await prisma.comment.deleteMany({ where: { postId: id } });
@@ -121,7 +127,11 @@ export const deletePost = async (id: number) => {
   return await prisma.post.delete({ where: { id } });
 };
 
-// Comments
+// ============================================================================
+// Comments 관련 Server Actions
+// ============================================================================
+
+// 댓글 생성 (Zod 스키마로 검증)
 export const createComment = async (formData: FormData) => {
   const parsed = commentSchema.parse({
     content: formData.get("content"),
@@ -130,11 +140,15 @@ export const createComment = async (formData: FormData) => {
   return await prisma.comment.create({ data: parsed });
 };
 
+// 댓글 삭제
 export const deleteComment = async (id: number) =>
   await prisma.comment.delete({ where: { id } });
 
+// ============================================================================
+// Users 관련 Server Actions
+// ============================================================================
 
-// Users
+// 모든 사용자 조회
 export const getUsers = async () => {
   const users = await prisma.user.findMany();
   return users;

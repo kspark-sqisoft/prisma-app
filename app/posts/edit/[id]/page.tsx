@@ -14,22 +14,25 @@ interface PostFormProps {
     postId: number;
 }
 
+// 포스트 수정 폼 컴포넌트
 function PostForm({ post, users, postId }: PostFormProps) {
     const [title, setTitle] = useState(post.title);
     const [userId, setUserId] = useState<number>(post.userId);
     const queryClient = useQueryClient();
     const router = useRouter();
 
+    // 포스트 수정 mutation
     const mutation = useMutation({
         mutationFn: () => updatePost(postId, title, userId),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["posts"] });
-            router.push("/");
+            queryClient.invalidateQueries({ queryKey: ["posts"] }); // 수정 후 리스트 갱신
+            router.push("/"); // 메인 페이지로 이동
         },
     });
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
+        // Zod 스키마로 클라이언트 측 검증
         const parsed = postSchema.safeParse({ title, userId });
         if (!parsed.success) {
             alert("Validation failed");
@@ -78,15 +81,18 @@ function PostForm({ post, users, postId }: PostFormProps) {
     );
 }
 
+// 포스트 수정 페이지
 export default function PostEdit() {
     const params = useParams();
-    const postId = Number(params.id);
+    const postId = Number(params.id); // URL 파라미터에서 포스트 ID 추출
 
+    // 포스트 데이터 가져오기
     const { data: post, isLoading: postLoading, error: postError } = useQuery({
         queryKey: ["post", postId],
         queryFn: () => getPost(postId),
-        enabled: !!postId && !isNaN(postId),
+        enabled: !!postId && !isNaN(postId), // 유효한 ID일 때만 쿼리 실행
     });
+    // 사용자 목록 가져오기
     const { data: users, isLoading: usersLoading, error: usersError } = useQuery({
         queryKey: ["users"],
         queryFn: getUsers
@@ -122,5 +128,6 @@ export default function PostEdit() {
         return <p className="text-center mt-10">No users available</p>;
     }
 
+    // key prop으로 포스트 변경 시 폼 리셋
     return <PostForm key={post.id} post={post} users={users} postId={postId} />;
 }

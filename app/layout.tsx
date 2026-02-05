@@ -45,11 +45,6 @@ export default function RootLayout({
                     </h1>
                   </Link>
                   <div className="flex gap-3">
-                    <Link href="/">
-                      <Button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-200">
-                        📋 Post List
-                      </Button>
-                    </Link>
                     <Link href="/posts/create">
                       <Button className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md hover:shadow-lg transition-all duration-200">
                         ✨ Create Post

@@ -1,18 +1,81 @@
 "use client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getPosts, deletePost, deleteComment, updateComment } from "../actions/actions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import CommentForm from "./comment-from";
 
 // 포스트 리스트 컴포넌트
 export default function PostList() {
   const queryClient = useQueryClient();
-  // React Query로 포스트 데이터 가져오기
-  const { data: posts } = useQuery({ queryKey: ["posts"], queryFn: getPosts });
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // 스크롤 모드 상태 (auto: 자동, manual: 수동)
+  const [scrollMode, setScrollMode] = useState<"auto" | "manual">("auto");
+  // 검색어 상태
+  const [searchQuery, setSearchQuery] = useState("");
+  // 디바운싱된 검색어 (서버 검색용)
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+
+  // 검색어 디바운싱 (500ms 지연)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // React Query Infinite Query로 포스트 데이터 가져오기
+  // 검색어가 있으면 서버 측 검색, 없으면 일반 로드
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetching,
+  } = useInfiniteQuery({
+    queryKey: ["posts", debouncedSearchQuery],
+    queryFn: ({ pageParam = 0 }) => getPosts(pageParam, 5, debouncedSearchQuery || undefined),
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.hasMore) {
+        return allPages.length * 5; // 다음 skip 값
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
+  });
+
+  // 모든 페이지의 포스트를 하나의 배열로 합치기
+  const posts = data?.pages.flatMap((page) => page.posts) ?? [];
+
+  // Auto 모드일 때만 Intersection Observer로 무한 스크롤 구현
+  useEffect(() => {
+    if (scrollMode !== "auto") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentRef = loadMoreRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+    }
+
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef);
+      }
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, scrollMode]);
 
   // 포스트 삭제 mutation
   const deletePostMutation = useMutation({
@@ -45,181 +108,314 @@ export default function PostList() {
     );
   };
 
-  if (!posts || posts.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <div className="text-6xl mb-4">📭</div>
-        <h3 className="text-2xl font-semibold text-gray-700 mb-2">No posts yet</h3>
-        <p className="text-gray-500">Create your first post to get started!</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {posts.map((post) => (
-        <Card
-          key={post.id}
-          className="p-6 bg-white shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 rounded-xl overflow-hidden"
-        >
-          <div
-            className="flex justify-between items-start cursor-pointer group"
-            onClick={() => toggleComments(post.id)}
+      {/* 검색 바 */}
+      <div className="bg-white rounded-xl shadow-md p-4 border border-gray-100">
+        <div className="flex gap-3 items-center">
+          <div className="flex-1 relative">
+            <Input
+              type="text"
+              placeholder="Search posts by title, author, or tags..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-12 text-base pl-10"
+            />
+            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+              🔍
+            </span>
+          </div>
+          {searchQuery && (
+            <Button
+              variant="outline"
+              onClick={() => setSearchQuery("")}
+              className="h-12 px-4"
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+        {searchQuery && (
+          <p className="mt-2 text-sm text-gray-500">
+            {isFetching && searchQuery !== debouncedSearchQuery ? (
+              <span className="text-gray-400">Searching...</span>
+            ) : (
+              <>
+                Found {posts.length} post{posts.length !== 1 ? "s" : ""} matching &quot;{debouncedSearchQuery}&quot;
+                {hasNextPage && (
+                  <span className="ml-2 text-gray-400">
+                    (scroll for more)
+                  </span>
+                )}
+              </>
+            )}
+          </p>
+        )}
+      </div>
+
+      {/* 포스트가 없을 때 */}
+      {!posts || posts.length === 0 ? (
+        <div className="text-center py-16">
+          <div className="text-6xl mb-4">📭</div>
+          <h3 className="text-2xl font-semibold text-gray-700 mb-2">No posts yet</h3>
+          <p className="text-gray-500">Create your first post to get started!</p>
+        </div>
+      ) : posts.length === 0 && debouncedSearchQuery ? (
+        // 검색 결과가 없을 때
+        <div className="text-center py-16">
+          <div className="text-6xl mb-4">🔍</div>
+          <h3 className="text-2xl font-semibold text-gray-700 mb-2">No posts found</h3>
+          <p className="text-gray-500">No posts match &quot;{debouncedSearchQuery}&quot;</p>
+          <Button
+            variant="outline"
+            onClick={() => setSearchQuery("")}
+            className="mt-4"
           >
-            <div className="flex-1">
-              <h3 className="text-xl font-semibold text-gray-800 mb-2 group-hover:text-blue-600 transition-colors">
-                {post.title}
-              </h3>
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <span className="font-medium text-gray-700">👤 {post.user.name}</span>
-                <span>•</span>
-                <span>{post.comments.length} 💬</span>
-              </div>
-              {post.tags && post.tags.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {post.tags.map((postTag) => (
-                    <span
-                      key={postTag.tag.id}
-                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"
-                    >
-                      #{postTag.tag.name}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            {/* 버튼 클릭 시 카드 클릭 이벤트 전파 방지 */}
-            <div className="flex gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
-              <Link href={`/posts/edit/${post.id}`}>
-                <Button
-                  size="sm"
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
-                >
-                  ✏️ Edit
-                </Button>
-              </Link>
+            Clear search
+          </Button>
+        </div>
+      ) : (
+        // 포스트 리스트 표시
+        <>
+
+          {/* 스크롤 모드 전환 버튼 */}
+          <div className="flex justify-end items-center gap-3 mb-4">
+            <span className="text-sm text-gray-600">Scroll Mode:</span>
+            <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
               <Button
-                variant="destructive"
                 size="sm"
-                className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
-                disabled={deletePostMutation.isPending}
-                onClick={(e) => {
-                  e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
-                  deletePostMutation.mutate(post.id);
-                }}
+                variant={scrollMode === "auto" ? "default" : "ghost"}
+                onClick={() => setScrollMode("auto")}
+                className={
+                  scrollMode === "auto"
+                    ? "bg-blue-500 text-white hover:bg-blue-600"
+                    : "text-gray-600 hover:text-gray-800"
+                }
               >
-                {/* 현재 삭제 중인 포스트만 "Deleting..." 표시 */}
-                {deletePostMutation.isPending && deletePostMutation.variables === post.id
-                  ? "⏳ Deleting..."
-                  : "🗑️ Delete"}
+                Auto
+              </Button>
+              <Button
+                size="sm"
+                variant={scrollMode === "manual" ? "default" : "ghost"}
+                onClick={() => setScrollMode("manual")}
+                className={
+                  scrollMode === "manual"
+                    ? "bg-blue-500 text-white hover:bg-blue-600"
+                    : "text-gray-600 hover:text-gray-800"
+                }
+              >
+                Manual
               </Button>
             </div>
           </div>
 
-          {/* 댓글 섹션 (카드 클릭 시 펼쳐짐) */}
-          {expandedPosts.includes(post.id) && (
-            <div className="mt-6 pt-6 border-t border-gray-200 space-y-4 animate-in fade-in slide-in-from-top-2">
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-700 flex items-center gap-2">
-                  💬 Comments ({post.comments.length})
-                </h4>
-                {post.comments.length === 0 ? (
-                  <p className="text-gray-400 text-sm italic">No comments yet. Be the first to comment!</p>
+          {posts.map((post) => (
+            <Card
+              key={post.id}
+              className="p-6 bg-white shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 rounded-xl overflow-hidden"
+            >
+              <div
+                className="flex justify-between items-start cursor-pointer group"
+                onClick={() => toggleComments(post.id)}
+              >
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-gray-800 mb-2 group-hover:text-blue-600 transition-colors">
+                    {post.title}
+                  </h3>
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span className="font-medium text-gray-700">👤 {post.user.name}</span>
+                    <span>•</span>
+                    <span>{post.comments.length} 💬</span>
+                  </div>
+                  {post.tags && post.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {post.tags.map((postTag) => (
+                        <span
+                          key={postTag.tag.id}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"
+                        >
+                          #{postTag.tag.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* 버튼 클릭 시 카드 클릭 이벤트 전파 방지 */}
+                <div className="flex gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
+                  <Link href={`/posts/edit/${post.id}`}>
+                    <Button
+                      size="sm"
+                      className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
+                    >
+                      ✏️ Edit
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
+                    disabled={deletePostMutation.isPending}
+                    onClick={(e) => {
+                      e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
+                      deletePostMutation.mutate(post.id);
+                    }}
+                  >
+                    {/* 현재 삭제 중인 포스트만 "Deleting..." 표시 */}
+                    {deletePostMutation.isPending && deletePostMutation.variables === post.id
+                      ? "⏳ Deleting..."
+                      : "🗑️ Delete"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* 댓글 섹션 (카드 클릭 시 펼쳐짐) */}
+              {expandedPosts.includes(post.id) && (
+                <div className="mt-6 pt-6 border-t border-gray-200 space-y-4 animate-in fade-in slide-in-from-top-2">
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+                      💬 Comments ({post.comments.length})
+                    </h4>
+                    {post.comments.length === 0 ? (
+                      <p className="text-gray-400 text-sm italic">No comments yet. Be the first to comment!</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {post.comments.map((c) => (
+                          <li
+                            key={c.id}
+                            className="flex justify-between items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                          >
+                            {editingCommentId === c.id ? (
+                              // 수정 모드
+                              <div className="flex-1 flex gap-2">
+                                <Input
+                                  value={editingContent}
+                                  onChange={(e) => setEditingContent(e.target.value)}
+                                  className="flex-1"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      updateCommentMutation.mutate({ id: c.id, content: editingContent });
+                                    } else if (e.key === "Escape") {
+                                      setEditingCommentId(null);
+                                      setEditingContent("");
+                                    }
+                                  }}
+                                />
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateCommentMutation.mutate({ id: c.id, content: editingContent });
+                                  }}
+                                  disabled={updateCommentMutation.isPending}
+                                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+                                >
+                                  {updateCommentMutation.isPending ? "⏳" : "✓"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCommentId(null);
+                                    setEditingContent("");
+                                  }}
+                                  className="border-gray-300"
+                                >
+                                  ✕
+                                </Button>
+                              </div>
+                            ) : (
+                              // 일반 모드
+                              <>
+                                <span className="flex-1 text-gray-700">{c.content}</span>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingCommentId(c.id);
+                                      setEditingContent(c.content);
+                                    }}
+                                  >
+                                    ✏️
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
+                                    disabled={deleteCommentMutation.isPending}
+                                    onClick={(e) => {
+                                      e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
+                                      deleteCommentMutation.mutate(c.id);
+                                    }}
+                                  >
+                                    {/* 현재 삭제 중인 댓글만 "⏳" 표시 */}
+                                    {deleteCommentMutation.isPending && deleteCommentMutation.variables === c.id
+                                      ? "⏳"
+                                      : "🗑️"}
+                                  </Button>
+                                </div>
+                              </>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  {/* 댓글 작성 폼 */}
+                  <CommentForm postId={post.id} />
+                </div>
+              )}
+            </Card>
+          ))}
+
+          {/* 무한 스크롤 트리거 및 로딩 인디케이터 */}
+          <div ref={scrollMode === "auto" ? loadMoreRef : undefined} className="py-8">
+            {scrollMode === "auto" ? (
+              // Auto 모드: 자동 로딩
+              <>
+                {isFetchingNextPage && (
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <p className="mt-2 text-sm text-gray-500">Loading more posts...</p>
+                  </div>
+                )}
+                {!hasNextPage && posts.length > 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No more posts to load</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              // Manual 모드: 더보기 버튼
+              <div className="text-center">
+                {hasNextPage ? (
+                  <Button
+                    onClick={() => fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                    className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 px-8 py-3 text-base font-semibold"
+                  >
+                    {isFetchingNextPage ? (
+                      <>
+                        <span className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
+                        Loading...
+                      </>
+                    ) : (
+                      "더보기"
+                    )}
+                  </Button>
                 ) : (
-                  <ul className="space-y-3">
-                    {post.comments.map((c) => (
-                      <li
-                        key={c.id}
-                        className="flex justify-between items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                      >
-                        {editingCommentId === c.id ? (
-                          // 수정 모드
-                          <div className="flex-1 flex gap-2">
-                            <Input
-                              value={editingContent}
-                              onChange={(e) => setEditingContent(e.target.value)}
-                              className="flex-1"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  updateCommentMutation.mutate({ id: c.id, content: editingContent });
-                                } else if (e.key === "Escape") {
-                                  setEditingCommentId(null);
-                                  setEditingContent("");
-                                }
-                              }}
-                            />
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateCommentMutation.mutate({ id: c.id, content: editingContent });
-                              }}
-                              disabled={updateCommentMutation.isPending}
-                              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
-                            >
-                              {updateCommentMutation.isPending ? "⏳" : "✓"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingCommentId(null);
-                                setEditingContent("");
-                              }}
-                              className="border-gray-300"
-                            >
-                              ✕
-                            </Button>
-                          </div>
-                        ) : (
-                          // 일반 모드
-                          <>
-                            <span className="flex-1 text-gray-700">{c.content}</span>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-blue-300 text-blue-600 hover:bg-blue-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingCommentId(c.id);
-                                  setEditingContent(c.content);
-                                }}
-                              >
-                                ✏️
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
-                                disabled={deleteCommentMutation.isPending}
-                                onClick={(e) => {
-                                  e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
-                                  deleteCommentMutation.mutate(c.id);
-                                }}
-                              >
-                                {/* 현재 삭제 중인 댓글만 "⏳" 표시 */}
-                                {deleteCommentMutation.isPending && deleteCommentMutation.variables === c.id
-                                  ? "⏳"
-                                  : "🗑️"}
-                              </Button>
-                            </div>
-                          </>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-gray-500">No more posts to load</p>
                 )}
               </div>
-              {/* 댓글 작성 폼 */}
-              <CommentForm postId={post.id} />
-            </div>
-          )}
-        </Card>
-      ))}
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

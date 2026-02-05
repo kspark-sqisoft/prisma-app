@@ -8,8 +8,21 @@ import {  postSchema, commentSchema } from "../lib/validation";
 // ============================================================================
 
 // 모든 포스트 조회 (사용자, 댓글, 태그 포함)
-export const getPosts = async () =>{
-  const posts =await prisma.post.findMany({
+export const getPosts = async (skip: number = 0, take: number = 5, searchQuery?: string) => {
+  const where = searchQuery
+    ? {
+        OR: [
+          { title: { contains: searchQuery, mode: "insensitive" as const } },
+          { user: { name: { contains: searchQuery, mode: "insensitive" as const } } },
+          { tags: { some: { tag: { name: { contains: searchQuery, mode: "insensitive" as const } } } } },
+        ],
+      }
+    : undefined;
+
+  const posts = await prisma.post.findMany({
+    skip,
+    take,
+    where,
     include: { 
       user: true, 
       comments: true, 
@@ -17,9 +30,15 @@ export const getPosts = async () =>{
     },
     orderBy: { id: "desc" }, // 최신순 정렬
   });
-  //console.log(JSON.stringify(posts, null, 2));
   
-  return posts;
+  // 검색 조건에 맞는 전체 포스트 개수 조회
+  const total = await prisma.post.count({ where });
+  
+  return {
+    posts,
+    hasMore: skip + take < total,
+    total,
+  };
 };
 
 

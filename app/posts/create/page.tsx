@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { getUsers, createPost } from "../../../actions/actions";
@@ -25,9 +25,20 @@ export default function PostCreate() {
   });
 
   const [title, setTitle] = useState("");
-  const [userId, setUserId] = useState<number>();
+  const [userId, setUserId] = useState<number | undefined>(undefined);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
+
+  // 사용자 목록이 로드되면 첫 번째 사용자를 기본값으로 설정
+  useEffect(() => {
+    if (users && users.length > 0 && userId === undefined) {
+      // 다음 렌더 사이클에서 상태 업데이트
+      const timer = setTimeout(() => {
+        setUserId(users[0].id);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [users, userId]);
 
   const addTag = () => {
     const trimmedTag = tagInput.trim();

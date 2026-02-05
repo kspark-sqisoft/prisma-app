@@ -4,12 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import { getTags } from "../actions/actions";
 import { useState } from "react";
 
+import { useTag } from "./tag-context";
+
 interface TagListProps {
     onTagClick?: (tagName: string) => void;
     selectedTag?: string;
 }
 
 export default function TagList({ onTagClick, selectedTag }: TagListProps) {
+    const { clearTag } = useTag();
     const { data: tags } = useQuery({ queryKey: ["tags"], queryFn: getTags });
     const [showAll, setShowAll] = useState(false);
 
@@ -27,8 +30,8 @@ export default function TagList({ onTagClick, selectedTag }: TagListProps) {
     };
 
     const handleClearTag = () => {
-        // Blog App 로고 클릭과 같은 효과 (태그 선택 초기화)
-        window.dispatchEvent(new CustomEvent("resetTagSelection"));
+        // 태그 선택 초기화
+        clearTag();
     };
 
     return (

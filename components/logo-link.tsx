@@ -3,13 +3,14 @@
 import { useRouter, usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useTag } from "./tag-context";
+import { useTagStore } from "../store/tag-store";
 
 export function LogoLink() {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
-  const { clearTag } = useTag();
+  // Zustand store에서 clearTag 함수 가져오기
+  const clearTag = useTagStore((state) => state.clearTag);
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     // 이미 인덱스 페이지에 있으면 새로고침
@@ -31,7 +32,7 @@ export function LogoLink() {
       onClick={handleClick}
       className="cursor-pointer hover:opacity-80 transition-opacity"
     >
-      <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+      <h1 className="text-2xl font-bold from-blue-600 to-purple-600 bg-clip-text text-transparent">
         Blog App
       </h1>
     </Link>

@@ -2,10 +2,12 @@
 
 import TagList from "./tag-list";
 import PostList from "./post-list";
-import { useTag } from "./tag-context";
+import { useTagStore } from "../store/tag-store";
 
 export default function TagListWrapper() {
-    const { tagSearchQuery, setTagSearchQuery } = useTag();
+    // Zustand store에서 태그 상태 가져오기
+    const tagSearchQuery = useTagStore((state) => state.tagSearchQuery);
+    const setTagSearchQuery = useTagStore((state) => state.setTagSearchQuery);
 
     const handleTagClick = (tagName: string) => {
         // 태그 클릭 시 무조건 해당 태그 선택 (토글이 아님)

@@ -2,7 +2,6 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import { TagProvider } from "./tag-context";
 
 // React Query Provider 컴포넌트
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -24,7 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
     return (
         <QueryClientProvider client={queryClient}>
-            <TagProvider>{children}</TagProvider>
+            {children}
         </QueryClientProvider>
     );
 }

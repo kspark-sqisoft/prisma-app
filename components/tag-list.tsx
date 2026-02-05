@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getTags } from "../actions/actions";
 import { useState } from "react";
 
-import { useTag } from "./tag-context";
+import { useTagStore } from "../store/tag-store";
 
 interface TagListProps {
     onTagClick?: (tagName: string) => void;
@@ -12,7 +12,8 @@ interface TagListProps {
 }
 
 export default function TagList({ onTagClick, selectedTag }: TagListProps) {
-    const { clearTag } = useTag();
+    // Zustand store에서 clearTag 함수 가져오기
+    const clearTag = useTagStore((state) => state.clearTag);
     const { data: tags } = useQuery({ queryKey: ["tags"], queryFn: getTags });
     const [showAll, setShowAll] = useState(false);
 

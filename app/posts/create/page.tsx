@@ -18,9 +18,17 @@ export default function PostCreate() {
   // 포스트 생성 mutation
   const mutation = useMutation({
     mutationFn: (formData: FormData) => createPost(formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] }); // 생성 후 리스트 갱신
-      router.push("/"); // 메인 페이지로 이동
+    onSuccess: async () => {
+      // 무한 스크롤 쿼리 리셋 (첫 페이지부터 다시 로드)
+      queryClient.resetQueries({
+        queryKey: ["posts"],
+      });
+      // 첫 페이지를 다시 가져와서 새 포스트가 맨 위에 보이도록
+      await queryClient.refetchQueries({
+        queryKey: ["posts"],
+        type: "active",
+      });
+      router.push("/"); // refetch 완료 후 메인 페이지로 이동
     },
   });
 

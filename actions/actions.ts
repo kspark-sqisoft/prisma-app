@@ -8,15 +8,42 @@ import {  postSchema, commentSchema } from "../lib/validation";
 // ============================================================================
 
 // 모든 포스트 조회 (사용자, 댓글, 태그 포함)
-export const getPosts = async (skip: number = 0, take: number = 5, searchQuery?: string) => {
-  const where = searchQuery
-    ? {
-        OR: [
-          { title: { contains: searchQuery, mode: "insensitive" as const } },
-          { user: { name: { contains: searchQuery, mode: "insensitive" as const } } },
-          { tags: { some: { tag: { name: { contains: searchQuery, mode: "insensitive" as const } } } } },
-        ],
-      }
+export const getPosts = async (skip: number = 0, take: number = 5, searchQuery?: string, tagName?: string) => {
+  type WhereCondition = {
+    OR?: Array<{
+      title?: { contains: string; mode: "insensitive" };
+      user?: { name: { contains: string; mode: "insensitive" } };
+      tags?: { some: { tag: { name: { contains: string; mode: "insensitive" } } } };
+    }>;
+    tags?: { some: { tag: { name: string } } };
+    AND?: WhereCondition[];
+  };
+
+  const whereConditions: WhereCondition[] = [];
+
+  // 사용자 검색어가 있으면 제목/작성자/태그 이름으로 검색
+  if (searchQuery) {
+    whereConditions.push({
+      OR: [
+        { title: { contains: searchQuery, mode: "insensitive" as const } },
+        { user: { name: { contains: searchQuery, mode: "insensitive" as const } } },
+        { tags: { some: { tag: { name: { contains: searchQuery, mode: "insensitive" as const } } } } },
+      ],
+    });
+  }
+
+  // 태그 이름으로 필터링 (태그 검색)
+  if (tagName) {
+    whereConditions.push({
+      tags: { some: { tag: { name: tagName } } },
+    });
+  }
+
+  // 조건이 있으면 AND로 결합
+  const where = whereConditions.length > 0
+    ? whereConditions.length === 1
+      ? whereConditions[0]
+      : { AND: whereConditions }
     : undefined;
 
   const posts = await prisma.post.findMany({

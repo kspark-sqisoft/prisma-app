@@ -18,7 +18,11 @@ export default function CommentForm({ postId }: CommentFormProps) {
   const mutation = useMutation({
     mutationFn: (formData: FormData) => createComment(formData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] }); // 댓글 추가 후 리스트 갱신
+      // 즉시 refetch하여 변경사항 반영
+      queryClient.invalidateQueries({
+        queryKey: ["posts"],
+        refetchType: "active", // 활성 쿼리만 즉시 refetch
+      });
       setContent(""); // 입력 필드 초기화
     },
   });

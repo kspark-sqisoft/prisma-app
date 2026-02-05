@@ -4,6 +4,7 @@ import "./globals.css";
 import Link from "next/link";
 import { Providers } from "@/components/providers";
 import { Button } from "@/components/ui/button";
+import { LogoLink } from "@/components/logo-link";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,12 +39,8 @@ export default function RootLayout({
             <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
               <div className="max-w-7xl mx-auto px-6 py-4">
                 <div className="flex justify-between items-center">
-                  {/* 로고 (클릭 시 메인 페이지로 이동) */}
-                  <Link href="/" className="cursor-pointer hover:opacity-80 transition-opacity">
-                    <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                      Blog App
-                    </h1>
-                  </Link>
+                  {/* 로고 (클릭 시 메인 페이지로 이동 및 새로고침) */}
+                  <LogoLink />
                   <div className="flex gap-3">
                     <Link href="/posts/create">
                       <Button className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md hover:shadow-lg transition-all duration-200">

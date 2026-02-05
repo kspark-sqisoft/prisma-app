@@ -4,33 +4,127 @@ import { getPosts, deletePost, deleteComment, updateComment } from "../actions/a
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import CommentForm from "./comment-from";
 
+interface PostListProps {
+  tagSearchQuery?: string; // 태그로 인한 검색어 (검색창에 표시 안 함)
+  onUserSearchStart?: () => void; // 사용자 검색 시작 시 태그 선택 해제를 위한 콜백
+}
+
 // 포스트 리스트 컴포넌트
-export default function PostList() {
+export default function PostList({ tagSearchQuery = "", onUserSearchStart }: PostListProps) {
   const queryClient = useQueryClient();
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // 스크롤 모드 상태 (auto: 자동, manual: 수동)
-  const [scrollMode, setScrollMode] = useState<"auto" | "manual">("auto");
-  // 검색어 상태
-  const [searchQuery, setSearchQuery] = useState("");
-  // 디바운싱된 검색어 (서버 검색용)
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [scrollMode, setScrollMode] = useState<"auto" | "manual">("manual");
+  // 사용자 입력 검색어 (검색창에 표시)
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  // 디바운싱된 사용자 검색어
+  const [debouncedUserSearchQuery, setDebouncedUserSearchQuery] = useState("");
+  // 태그 클릭으로 인한 검색어 초기화인지 추적
+  const isTagClickRef = useRef(false);
 
-  // 검색어 디바운싱 (500ms 지연)
+  // 사용자가 직접 검색어를 입력하면 태그 선택 해제
+  // 태그 클릭으로 인한 검색어 초기화는 제외
+  const prevUserSearchQueryRef = useRef(userSearchQuery);
+
   useEffect(() => {
+    // 이전 검색어와 비교하여 사용자가 직접 입력한 경우만 태그 선택 해제
+    const prevQuery = prevUserSearchQueryRef.current;
+    const isUserTyping = userSearchQuery &&
+      userSearchQuery.trim() !== "" &&
+      userSearchQuery !== prevQuery && // 검색어가 변경되었고
+      prevQuery !== "" && // 이전 검색어가 비어있지 않았거나 (계속 입력 중)
+      !isTagClickRef.current && // 태그 클릭이 아니고
+      tagSearchQuery && // 태그가 선택되어 있고
+      onUserSearchStart;
+
+    if (isUserTyping) {
+      onUserSearchStart();
+    }
+
+    // 이전 검색어 업데이트
+    prevUserSearchQueryRef.current = userSearchQuery;
+  }, [userSearchQuery, tagSearchQuery, onUserSearchStart]);
+
+  // 태그 선택 시 검색어 초기화를 위한 이벤트 리스너
+  useEffect(() => {
+    const handleTagSelected = () => {
+      setUserSearchQuery("");
+      setDebouncedUserSearchQuery("");
+    };
+
+    window.addEventListener("tagSelected", handleTagSelected);
+
+    return () => {
+      window.removeEventListener("tagSelected", handleTagSelected);
+    };
+  }, []);
+
+  // 태그가 선택되면 사용자 검색어 즉시 초기화 (태그 선택 시 무조건 검색어 지우기)
+  useEffect(() => {
+    if (tagSearchQuery) {
+      // 태그 클릭으로 인한 초기화임을 표시 (다른 useEffect에서 태그 해제를 방지)
+      isTagClickRef.current = true;
+      // 이전 검색어도 초기화하여 사용자 입력으로 인식되지 않도록
+      prevUserSearchQueryRef.current = "";
+      // 태그가 선택되면 검색 필드를 즉시 초기화 (디바운싱 없이)
+      // 이벤트를 발생시켜 다른 컴포넌트에도 알림
+      window.dispatchEvent(new CustomEvent("tagSelected"));
+      // 검색어 즉시 초기화 (태그 선택 시 즉시 반영되도록)
+      const timer = setTimeout(() => {
+        setUserSearchQuery("");
+        setDebouncedUserSearchQuery(""); // 즉시 초기화하여 태그만으로 필터링
+        // 태그 선택 시 React Query를 강제로 refetch하여 즉시 데이터 로드
+        // queryKey가 변경되면 자동으로 refetch되지만, 명시적으로 invalidate하여 즉시 반영
+        queryClient.invalidateQueries({
+          queryKey: ["posts"],
+          refetchType: "active"
+        });
+        // 플래그를 다음 렌더 사이클에서 리셋 (다른 useEffect가 실행된 후)
+        setTimeout(() => {
+          isTagClickRef.current = false;
+        }, 200);
+      }, 0);
+      return () => clearTimeout(timer);
+    } else {
+      // 태그가 해제되면 플래그 리셋
+      isTagClickRef.current = false;
+    }
+  }, [tagSearchQuery, queryClient]);
+
+  // 사용자 검색어 디바운싱 (500ms 지연)
+  // 태그가 선택되어 있으면 디바운싱하지 않음
+  useEffect(() => {
+    // 태그가 선택되어 있으면 디바운싱하지 않음
+    if (tagSearchQuery) {
+      return;
+    }
+
     const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
+      setDebouncedUserSearchQuery(userSearchQuery);
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [userSearchQuery, tagSearchQuery]);
 
   // React Query Infinite Query로 포스트 데이터 가져오기
   // 검색어가 있으면 서버 측 검색, 없으면 일반 로드
+  // 태그 검색과 사용자 검색을 완전히 별개로 처리
   const {
     data,
     fetchNextPage,
@@ -38,8 +132,21 @@ export default function PostList() {
     isFetchingNextPage,
     isFetching,
   } = useInfiniteQuery({
-    queryKey: ["posts", debouncedSearchQuery],
-    queryFn: ({ pageParam = 0 }) => getPosts(pageParam, 5, debouncedSearchQuery || undefined),
+    // 태그가 선택되어 있으면 검색어는 queryKey에서 완전히 제외하여 태그만으로 필터링
+    // 태그가 없을 때만 검색어를 queryKey에 포함
+    queryKey: tagSearchQuery
+      ? ["posts", "", tagSearchQuery]
+      : ["posts", debouncedUserSearchQuery, ""],
+    queryFn: ({ pageParam = 0 }) => {
+      // 태그가 선택되어 있으면 검색어는 완전히 무시하고 태그만으로 필터링
+      // 태그가 없고 검색어만 있으면 검색어로만 필터링
+      return getPosts(
+        pageParam,
+        5,
+        tagSearchQuery ? undefined : (debouncedUserSearchQuery || undefined),
+        tagSearchQuery || undefined
+      );
+    },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.hasMore) {
         return allPages.length * 5; // 다음 skip 값
@@ -47,6 +154,12 @@ export default function PostList() {
       return undefined;
     },
     initialPageParam: 0,
+    // 캐싱 설정: 같은 데이터는 캐시에서 사용
+    staleTime: 5 * 60 * 1000, // 5분간 fresh 상태 유지 (이 시간 동안은 서버 요청 안 함)
+    gcTime: 10 * 60 * 1000, // 10분간 캐시 유지 (이전 cacheTime)
+    refetchOnMount: false, // 마운트 시 자동 refetch 비활성화 (캐시가 fresh하면)
+    refetchOnWindowFocus: false, // 윈도우 포커스 시 자동 refetch 비활성화
+    refetchOnReconnect: true, // 네트워크 재연결 시에는 refetch (데이터 동기화)
   });
 
   // 모든 페이지의 포스트를 하나의 배열로 합치기
@@ -80,19 +193,35 @@ export default function PostList() {
   // 포스트 삭제 mutation
   const deletePostMutation = useMutation({
     mutationFn: deletePost,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }), // 삭제 후 리스트 갱신
+    onSuccess: () => {
+      // 즉시 refetch하여 변경사항 반영
+      queryClient.invalidateQueries({
+        queryKey: ["posts"],
+        refetchType: "active", // 활성 쿼리만 즉시 refetch
+      });
+    },
   });
   // 댓글 삭제 mutation
   const deleteCommentMutation = useMutation({
     mutationFn: deleteComment,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }), // 삭제 후 리스트 갱신
+    onSuccess: () => {
+      // 즉시 refetch하여 변경사항 반영
+      queryClient.invalidateQueries({
+        queryKey: ["posts"],
+        refetchType: "active", // 활성 쿼리만 즉시 refetch
+      });
+    },
   });
 
   // 댓글 수정 mutation
   const updateCommentMutation = useMutation({
     mutationFn: ({ id, content }: { id: number; content: string }) => updateComment(id, content),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] }); // 수정 후 리스트 갱신
+      // 즉시 refetch하여 변경사항 반영
+      queryClient.invalidateQueries({
+        queryKey: ["posts"],
+        refetchType: "active", // 활성 쿼리만 즉시 refetch
+      });
       setEditingCommentId(null); // 수정 모드 종료
     },
   });
@@ -102,6 +231,10 @@ export default function PostList() {
   // 댓글 수정 상태 관리
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingContent, setEditingContent] = useState("");
+  // 삭제 확인 다이얼로그 상태
+  const [deletePostId, setDeletePostId] = useState<number | null>(null);
+  const [deleteCommentId, setDeleteCommentId] = useState<number | null>(null);
+
   const toggleComments = (id: number) => {
     setExpandedPosts((prev) =>
       prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id],
@@ -117,31 +250,45 @@ export default function PostList() {
             <Input
               type="text"
               placeholder="Search posts by title, author, or tags..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={userSearchQuery}
+              onChange={(e) => setUserSearchQuery(e.target.value)}
               className="h-12 text-base pl-10"
             />
             <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
               🔍
             </span>
           </div>
-          {searchQuery && (
+          {(userSearchQuery || tagSearchQuery) && (
             <Button
               variant="outline"
-              onClick={() => setSearchQuery("")}
+              onClick={() => {
+                setUserSearchQuery("");
+              }}
               className="h-12 px-4"
             >
               Clear
             </Button>
           )}
         </div>
-        {searchQuery && (
+        {(debouncedUserSearchQuery || tagSearchQuery) && (
           <p className="mt-2 text-sm text-gray-500">
-            {isFetching && searchQuery !== debouncedSearchQuery ? (
+            {isFetching && userSearchQuery !== debouncedUserSearchQuery ? (
               <span className="text-gray-400">Searching...</span>
             ) : (
               <>
-                Found {posts.length} post{posts.length !== 1 ? "s" : ""} matching &quot;{debouncedSearchQuery}&quot;
+                {tagSearchQuery && !debouncedUserSearchQuery ? (
+                  <>
+                    Showing posts with tag &quot;{tagSearchQuery}&quot;
+                  </>
+                ) : debouncedUserSearchQuery && !tagSearchQuery ? (
+                  <>
+                    Found {posts.length} post{posts.length !== 1 ? "s" : ""} matching &quot;{debouncedUserSearchQuery}&quot;
+                  </>
+                ) : (
+                  <>
+                    Found {posts.length} post{posts.length !== 1 ? "s" : ""} matching &quot;{debouncedUserSearchQuery}&quot; with tag &quot;{tagSearchQuery}&quot;
+                  </>
+                )}
                 {hasNextPage && (
                   <span className="ml-2 text-gray-400">
                     (scroll for more)
@@ -160,15 +307,23 @@ export default function PostList() {
           <h3 className="text-2xl font-semibold text-gray-700 mb-2">No posts yet</h3>
           <p className="text-gray-500">Create your first post to get started!</p>
         </div>
-      ) : posts.length === 0 && debouncedSearchQuery ? (
+      ) : posts.length === 0 && (debouncedUserSearchQuery || tagSearchQuery) ? (
         // 검색 결과가 없을 때
         <div className="text-center py-16">
           <div className="text-6xl mb-4">🔍</div>
           <h3 className="text-2xl font-semibold text-gray-700 mb-2">No posts found</h3>
-          <p className="text-gray-500">No posts match &quot;{debouncedSearchQuery}&quot;</p>
+          <p className="text-gray-500">
+            {tagSearchQuery && !debouncedUserSearchQuery
+              ? `No posts match tag &quot;${tagSearchQuery}&quot;`
+              : debouncedUserSearchQuery && !tagSearchQuery
+                ? `No posts match &quot;${debouncedUserSearchQuery}&quot;`
+                : `No posts match &quot;${debouncedUserSearchQuery}&quot; with tag &quot;${tagSearchQuery}&quot;`}
+          </p>
           <Button
             variant="outline"
-            onClick={() => setSearchQuery("")}
+            onClick={() => {
+              setUserSearchQuery("");
+            }}
             className="mt-4"
           >
             Clear search
@@ -250,21 +405,55 @@ export default function PostList() {
                       ✏️ Edit
                     </Button>
                   </Link>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
-                    disabled={deletePostMutation.isPending}
-                    onClick={(e) => {
-                      e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
-                      deletePostMutation.mutate(post.id);
-                    }}
-                  >
-                    {/* 현재 삭제 중인 포스트만 "Deleting..." 표시 */}
-                    {deletePostMutation.isPending && deletePostMutation.variables === post.id
-                      ? "⏳ Deleting..."
-                      : "🗑️ Delete"}
-                  </Button>
+                  <AlertDialog open={deletePostId === post.id} onOpenChange={(open) => {
+                    if (!open) setDeletePostId(null);
+                  }}>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
+                        disabled={deletePostMutation.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
+                          setDeletePostId(post.id);
+                        }}
+                      >
+                        {/* 현재 삭제 중인 포스트만 "Deleting..." 표시 */}
+                        {deletePostMutation.isPending && deletePostMutation.variables === post.id
+                          ? "⏳ Deleting..."
+                          : "🗑️ Delete"}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>포스트 삭제 확인</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          정말로 이 포스트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없으며, 포스트와 관련된 모든 댓글도 함께 삭제됩니다.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletePostId(null);
+                        }}>
+                          취소
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          variant="destructive"
+                          className="bg-red-600 hover:bg-red-700 text-white"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deletePostMutation.mutate(post.id);
+                            setDeletePostId(null);
+                          }}
+                          disabled={deletePostMutation.isPending}
+                        >
+                          삭제
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </div>
 
@@ -343,21 +532,55 @@ export default function PostList() {
                                   >
                                     ✏️
                                   </Button>
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
-                                    disabled={deleteCommentMutation.isPending}
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
-                                      deleteCommentMutation.mutate(c.id);
-                                    }}
-                                  >
-                                    {/* 현재 삭제 중인 댓글만 "⏳" 표시 */}
-                                    {deleteCommentMutation.isPending && deleteCommentMutation.variables === c.id
-                                      ? "⏳"
-                                      : "🗑️"}
-                                  </Button>
+                                  <AlertDialog open={deleteCommentId === c.id} onOpenChange={(open) => {
+                                    if (!open) setDeleteCommentId(null);
+                                  }}>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200"
+                                        disabled={deleteCommentMutation.isPending}
+                                        onClick={(e) => {
+                                          e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
+                                          setDeleteCommentId(c.id);
+                                        }}
+                                      >
+                                        {/* 현재 삭제 중인 댓글만 "⏳" 표시 */}
+                                        {deleteCommentMutation.isPending && deleteCommentMutation.variables === c.id
+                                          ? "⏳"
+                                          : "🗑️"}
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent size="sm" onClick={(e) => e.stopPropagation()}>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>댓글 삭제 확인</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          정말로 이 댓글을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDeleteCommentId(null);
+                                        }}>
+                                          취소
+                                        </AlertDialogCancel>
+                                        <AlertDialogAction
+                                          variant="destructive"
+                                          className="bg-red-600 hover:bg-red-700 text-white"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            deleteCommentMutation.mutate(c.id);
+                                            setDeleteCommentId(null);
+                                          }}
+                                          disabled={deleteCommentMutation.isPending}
+                                        >
+                                          삭제
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
                                 </div>
                               </>
                             )}

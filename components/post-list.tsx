@@ -27,6 +27,8 @@ interface PostListProps {
 // 포스트 리스트 컴포넌트
 export default function PostList({ tagSearchQuery = "", onUserSearchStart }: PostListProps) {
   const queryClient = useQueryClient();
+  // 무한 스크롤을 위한 ref: 포스트 리스트 끝에 있는 감지용 div 요소를 참조
+  // Intersection Observer가 이 요소가 화면에 보이는지 감지하여 자동으로 다음 페이지 로드
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // 스크롤 모드 상태 (auto: 자동, manual: 수동)
@@ -126,22 +128,34 @@ export default function PostList({ tagSearchQuery = "", onUserSearchStart }: Pos
   useEffect(() => {
     if (scrollMode !== "auto") return;
 
+    // Intersection Observer 생성: 특정 요소가 화면에 보이는지 감지하는 API
     const observer = new IntersectionObserver(
       (entries) => {
+        // entries[0]: 관찰 중인 첫 번째 요소의 정보
+        // entries[0].isIntersecting: 요소가 화면에 보이는지 여부 (true/false)
+        // loadMoreRef 요소가 화면에 보이고, 다음 페이지가 있고, 현재 로딩 중이 아니면 다음 페이지 로드
         if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
           fetchNextPage();
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 } // 요소의 10%가 보이면 감지 (0.0 ~ 1.0 사이의 값)
     );
 
+    // loadMoreRef.current: ref가 연결된 실제 DOM 요소를 가져옴
+    // 예: <div ref={loadMoreRef}>...</div> → 이 div 요소가 currentRef에 저장됨
     const currentRef = loadMoreRef.current;
+
+    // DOM 요소가 존재하는지 확인 (컴포넌트가 마운트되지 않았거나 ref가 연결되지 않았을 수 있음)
     if (currentRef) {
+      // observer.observe(요소): 이 요소를 관찰 대상으로 등록
+      // 이제 이 요소가 화면에 보이거나 사라질 때마다 위의 콜백 함수가 실행됨
       observer.observe(currentRef);
     }
 
+    // cleanup 함수: 컴포넌트가 언마운트되거나 의존성이 변경될 때 실행
     return () => {
       if (currentRef) {
+        // observer.unobserve(요소): 요소 관찰 중지 (메모리 누수 방지)
         observer.unobserve(currentRef);
       }
     };
@@ -555,6 +569,7 @@ export default function PostList({ tagSearchQuery = "", onUserSearchStart }: Pos
           ))}
 
           {/* 무한 스크롤 트리거 및 로딩 인디케이터 */}
+          {/* Auto 모드일 때만 loadMoreRef 연결: 이 div가 화면에 보이면 자동으로 다음 페이지 로드 */}
           <div ref={scrollMode === "auto" ? loadMoreRef : undefined} className="py-8">
             {scrollMode === "auto" ? (
               // Auto 모드: 자동 로딩
